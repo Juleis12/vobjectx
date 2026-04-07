@@ -77,12 +77,47 @@ def get_transition(transition_to, year, tzinfo):
     month = month_dt.month
     day = first_transition(generate_dates(year, month), test).day
     uncorrected = first_transition(generate_dates(year, month, day), test)
+
+    # Detect Gap (Non-existent) at uncorrected + 1 hour
+    # Note: first_transition for daylight returns the hour before it becomes daylight.
+    # In zoneinfo, this uncorrected+1 might already be 03:00 if 02:00 was skipped.
+    check_dt = uncorrected + dt.timedelta(hours=1)
+    is_gap = False
+    try:
+        # Check if uncorrected + 1 hour is a non-existent time
+        # In zoneinfo, if check_dt was 02:00, and 02:00 is skipped,
+        # it might already show up as something else or we can check with fold.
+        # A better way to detect gap is to see if fold=0 and fold=1 result in same UTC but different wall clock
+        # OR just check if it was supposed to be uncorrected + 1 but the library moved it.
+
+        # If we are looking for daylight transition, we expect the offset to change.
+        offset0 = tzinfo.utcoffset(check_dt.replace(fold=0))
+        offset1 = tzinfo.utcoffset(check_dt.replace(fold=1))
+
+        # For a gap (Spring forward), fold=0 and fold=1 usually return the same (the 'after' offset)
+        # but we can detect it by checking if it's "imaginary"
+        dt_no_tz = check_dt.replace(tzinfo=None)
+        # Use an offset that we know existed just before
+        prev_offset = tzinfo.utcoffset((check_dt - dt.timedelta(hours=1)).replace(fold=0))
+        dt_utc_supposed = (dt_no_tz - prev_offset).replace(tzinfo=dt.timezone.utc)
+        dt_actual = dt_utc_supposed.astimezone(tzinfo)
+        if dt_actual.replace(tzinfo=None) != dt_no_tz:
+            is_gap = True
+    except Exception:
+        pass
+
     if transition_to == "standard":
         # assuming tzinfo.dst returns a new offset for the first possible hour, we need to add one hour for the
         # offset change and another hour because first_transition returns the hour before the transition
         return uncorrected + dt.timedelta(hours=2)
 
-    return uncorrected + dt.timedelta(hours=1)
+    # For daylight (Spring forward), if it's a gap, pytz used to return the start of the gap.
+    # zoneinfo's get_transition logic (via fold) might find the end of the gap.
+    # If we found a gap, return the hour before the gap ends (which is the hour it starts).
+    if is_gap:
+        return check_dt - dt.timedelta(hours=1)
+
+    return check_dt
 
 
 def tzinfo_eq(tzinfo1, tzinfo2, start_year=2000, end_year=2020):
