@@ -123,18 +123,13 @@ class TimezoneComponent(Component):
 
         def _handle_else():
             two_hours = dt.timedelta(hours=2)
-            # Detect Ambiguity or Gap for zoneinfo/standard tzinfo
-            is_dst = transition_to == "daylight"
-            fold = 1 if is_dst else 0
+            # Use fold=1 to get the state after the transition
+            # For overlaps, fold=1 is the second instance (Standard time)
+            # For gaps, fold=1 is the instance after the gap (Daylight time)
 
-            # For zoneinfo, we use fold to resolve ambiguity
-            # For non-existent times, standard library utcoffset/tzname behavior depends on the implementation
-            # usually it returns the 'other' side or stays consistent.
-            # get_transition already found the 'transition' datetime.
-
-            old_offset = tzinfo.utcoffset((transition - two_hours).replace(fold=fold))
-            name = tzinfo.tzname(transition.replace(fold=fold))
-            offset = tzinfo.utcoffset(transition.replace(fold=fold))
+            old_offset = tzinfo.utcoffset((transition - two_hours).replace(fold=0))
+            name = tzinfo.tzname(transition.replace(fold=1))
+            offset = tzinfo.utcoffset(transition.replace(fold=1))
 
             rule = {
                 "end": None,  # None, or an integer year
