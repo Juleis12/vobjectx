@@ -1,6 +1,6 @@
 import datetime as dt
 
-import pytz
+import zoneinfo
 
 from .constants_tmp import TRANSITIONS
 from .imports_ import contextlib
@@ -47,13 +47,25 @@ def get_transition(transition_to, year, tzinfo):
     def test(dt_):
         is_standard_transition = transition_to == "standard"
         is_daylight_transition = not is_standard_transition
+
+        # Detect Ambiguity (Overlap)
+        if tzinfo.dst(dt_.replace(fold=0)) != tzinfo.dst(dt_.replace(fold=1)):
+            return is_standard_transition
+
+        # Detect Gap (Non-existent)
+        dt_no_tz = dt_.replace(tzinfo=None)
         try:
-            is_dt_zerodelta = tzinfo.dst(dt_) == dt.timedelta(0)
-            return is_dt_zerodelta if is_standard_transition else not is_dt_zerodelta
-        except pytz.NonExistentTimeError:
-            return is_daylight_transition  # entering daylight time
-        except pytz.AmbiguousTimeError:
-            return is_standard_transition  # entering standard time
+            offset = tzinfo.utcoffset(dt_.replace(fold=0))
+            if offset is not None:
+                dt_utc = (dt_no_tz - offset).replace(tzinfo=dt.timezone.utc)
+                dt_back = dt_utc.astimezone(tzinfo)
+                if dt_back.replace(tzinfo=None) != dt_no_tz:
+                    return is_daylight_transition
+        except Exception:
+            pass
+
+        is_dt_zerodelta = tzinfo.dst(dt_) == dt.timedelta(0)
+        return is_dt_zerodelta if is_standard_transition else not is_dt_zerodelta
 
     month_dt = first_transition(generate_dates(year), test)
     if month_dt is None:

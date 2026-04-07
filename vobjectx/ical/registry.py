@@ -1,6 +1,6 @@
 from typing import Any
 
-import pytz
+import zoneinfo
 
 from vobjectx.helper import logger, to_unicode
 from vobjectx.helper.constants_tmp import UTC_TZ
@@ -20,9 +20,9 @@ class TzidRegistry:
         _tz = cls.__tzid_map.get(to_unicode(tzid))
         if smart and tzid and not _tz:
             try:
-                _tz = pytz.timezone(tzid)
+                _tz = zoneinfo.ZoneInfo(tzid)
                 cls.register(to_unicode(tzid), _tz)
-            except pytz.UnknownTimeZoneError as e:
+            except zoneinfo.ZoneInfoNotFoundError as e:
                 logger.error(e)
         return _tz
 

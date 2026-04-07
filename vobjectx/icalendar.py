@@ -5,7 +5,7 @@ import datetime as dt
 import socket
 from itertools import chain
 
-import pytz
+import zoneinfo
 from dateutil import rrule, tz
 
 from vobjectx.helper.constants_tmp import DATENAMES, DATESANDRULES, RULENAMES, TRANSITIONS, UTC_TZ, WEEKDAYS
@@ -123,16 +123,18 @@ class TimezoneComponent(Component):
 
         def _handle_else():
             two_hours = dt.timedelta(hours=2)
-            try:
-                old_offset = tzinfo.utcoffset(transition - two_hours)
-                name = tzinfo.tzname(transition)
-                offset = tzinfo.utcoffset(transition)
-            except (pytz.AmbiguousTimeError, pytz.NonExistentTimeError):
-                # guaranteed that tzinfo is a pytz timezone
-                is_dst = transition_to == "daylight"
-                old_offset = tzinfo.utcoffset(transition - two_hours, is_dst=is_dst)
-                name = tzinfo.tzname(transition, is_dst=is_dst)
-                offset = tzinfo.utcoffset(transition, is_dst=is_dst)
+            # Detect Ambiguity or Gap for zoneinfo/standard tzinfo
+            is_dst = transition_to == "daylight"
+            fold = 1 if is_dst else 0
+
+            # For zoneinfo, we use fold to resolve ambiguity
+            # For non-existent times, standard library utcoffset/tzname behavior depends on the implementation
+            # usually it returns the 'other' side or stays consistent.
+            # get_transition already found the 'transition' datetime.
+
+            old_offset = tzinfo.utcoffset((transition - two_hours).replace(fold=fold))
+            name = tzinfo.tzname(transition.replace(fold=fold))
+            offset = tzinfo.utcoffset(transition.replace(fold=fold))
 
             rule = {
                 "end": None,  # None, or an integer year
@@ -264,7 +266,7 @@ class TimezoneComponent(Component):
             # If tzinfo is UTC, we don't need a TZID
             return None
 
-        for attr in ("tzid", "zone", "_tzid"):
+        for attr in ("key", "tzid", "zone", "_tzid"):
             tzid_ = getattr(tzinfo, attr, None)
             if tzid_:
                 return to_unicode(tzid_)
